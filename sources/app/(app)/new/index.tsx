@@ -302,9 +302,10 @@ function NewSessionScreen() {
     });
     const handlePathClick = React.useCallback(() => {
         if (selectedMachineId) {
-            router.push(`/new/pick/path?machineId=${selectedMachineId}`);
+            // Pass the current selected path so it can be displayed in the path picker
+            router.push(`/new/pick/path?machineId=${selectedMachineId}&selectedPath=${encodeURIComponent(selectedPath)}`);
         }
-    }, [selectedMachineId, router]);
+    }, [selectedMachineId, selectedPath, router]);
 
     // Get selected machine name
     const selectedMachine = React.useMemo(() => {
