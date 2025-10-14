@@ -22,18 +22,6 @@ import { getTempData, type NewSessionData } from '@/utils/tempDataStore';
 import { linkTaskToSession } from '@/-zen/model/taskSessionLink';
 import { PermissionMode, ModelMode } from '@/components/PermissionModeSelector';
 
-// Simple temporary state for passing selections back from picker screens
-let onMachineSelected: (machineId: string) => void = () => { };
-let onPathSelected: (machineId: string | null, path: string) => void = () => { };
-export const callbacks = {
-    onMachineSelected: (machineId: string) => {
-        onMachineSelected(machineId);
-    },
-    onPathSelected: (machineId: string | null, path: string) => {
-        onPathSelected(machineId, path);
-    }
-}
-
 // Helper function to get the most recent path for a machine from settings or sessions
 const getRecentPathForMachine = (machineId: string | null, recentPaths: Array<{ machineId: string; path: string }>): string => {
     if (!machineId) return '/home/';
@@ -85,24 +73,40 @@ const updateRecentMachinePaths = (
     return updated.slice(0, 10);
 };
 
+const getFirstParamValue = (value?: string | string[]): string | undefined => {
+    if (!value) {
+        return undefined;
+    }
+    return Array.isArray(value) ? value[0] : value;
+};
+
 function NewSessionScreen() {
     const { theme } = useUnistyles();
     const router = useRouter();
-    const { prompt, dataId } = useLocalSearchParams<{ prompt?: string; dataId?: string }>();
+    const params = useLocalSearchParams<{
+        prompt?: string | string[];
+        dataId?: string | string[];
+        machineId?: string | string[];
+        selectedPath?: string | string[];
+    }>();
+    const promptParam = getFirstParamValue(params.prompt);
+    const dataIdParam = getFirstParamValue(params.dataId);
+    const machineIdParam = getFirstParamValue(params.machineId);
+    const selectedPathParam = getFirstParamValue(params.selectedPath);
 
     // Try to get data from temporary store first, fallback to direct prompt parameter
     const tempSessionData = React.useMemo(() => {
-        if (dataId) {
-            return getTempData<NewSessionData>(dataId);
+        if (dataIdParam) {
+            return getTempData<NewSessionData>(dataIdParam);
         }
         return null;
-    }, [dataId]);
+    }, [dataIdParam]);
 
     const [input, setInput] = React.useState(() => {
         if (tempSessionData?.prompt) {
             return tempSessionData.prompt;
         }
-        return prompt || '';
+        return promptParam || '';
     });
     const [isSending, setIsSending] = React.useState(false);
     const [sessionType, setSessionType] = React.useState<'simple' | 'worktree'>('simple');
@@ -178,48 +182,85 @@ function NewSessionScreen() {
         }
     }, [machines, selectedMachineId, recentMachinePaths]);
 
-    React.useEffect(() => {
-        let handler = (machineId: string) => {
-            let machine = storage.getState().machines[machineId];
-            if (machine) {
-                setSelectedMachineId(machineId);
-                // Also update the path when machine changes
-                const bestPath = getRecentPathForMachine(machineId, recentMachinePaths);
-                setSelectedPath(bestPath);
-            }
-        };
-        onMachineSelected = handler;
-        return () => {
-            onMachineSelected = () => { };
-        };
-    }, [recentMachinePaths]);
+    const machineParamAppliedRef = React.useRef<string | null>(null);
+    const pathParamAppliedRef = React.useRef<{ machineId: string | null; path: string | null }>({
+        machineId: null,
+        path: null,
+    });
 
     React.useEffect(() => {
-        let handler = (machineId: string | null, path: string) => {
-            if (machineId && machineId !== selectedMachineId) {
-                setSelectedMachineId(machineId);
-            }
-            setSelectedPath(path);
+        if (!machineIdParam) {
+            return;
+        }
 
-            if (machineId) {
-                const currentIndex = recentMachinePaths.findIndex(entry => entry.machineId === machineId);
-                const alreadyFirstWithSamePath = currentIndex === 0 && recentMachinePaths[0]?.path === path;
+        if (machineParamAppliedRef.current === machineIdParam) {
+            return;
+        }
 
-                if (!alreadyFirstWithSamePath) {
-                    const updatedPaths = updateRecentMachinePaths(recentMachinePaths, machineId, path);
-                    sync.applySettings({ recentMachinePaths: updatedPaths });
-                }
+        const matchingMachine = machines.find(m => m.id === machineIdParam);
+        if (!matchingMachine) {
+            return;
+        }
+
+        machineParamAppliedRef.current = machineIdParam;
+
+        if (machineIdParam !== selectedMachineId) {
+            setSelectedMachineId(machineIdParam);
+            const bestPath = getRecentPathForMachine(machineIdParam, recentMachinePaths);
+            setSelectedPath(bestPath);
+        }
+    }, [machineIdParam, machines, recentMachinePaths, selectedMachineId]);
+
+    React.useEffect(() => {
+        if (!selectedPathParam) {
+            return;
+        }
+
+        const targetMachineId = machineIdParam || selectedMachineId;
+        const alreadyHandled =
+            pathParamAppliedRef.current.path === selectedPathParam &&
+            pathParamAppliedRef.current.machineId === (targetMachineId ?? null);
+
+        if (alreadyHandled) {
+            return;
+        }
+
+        const matchingMachine = targetMachineId ? machines.find(m => m.id === targetMachineId) : null;
+
+        if (targetMachineId && matchingMachine && targetMachineId !== selectedMachineId) {
+            setSelectedMachineId(targetMachineId);
+            machineParamAppliedRef.current = targetMachineId;
+        }
+
+        setSelectedPath(selectedPathParam);
+
+        if (targetMachineId && matchingMachine) {
+            const currentIndex = recentMachinePaths.findIndex(entry => entry.machineId === targetMachineId);
+            const alreadyFirstWithSamePath =
+                currentIndex === 0 && recentMachinePaths[0]?.path === selectedPathParam;
+
+            if (!alreadyFirstWithSamePath) {
+                const updatedPaths = updateRecentMachinePaths(recentMachinePaths, targetMachineId, selectedPathParam);
+                sync.applySettings({ recentMachinePaths: updatedPaths });
             }
+        }
+
+        pathParamAppliedRef.current = {
+            machineId: targetMachineId ?? null,
+            path: selectedPathParam,
         };
-        onPathSelected = handler;
-        return () => {
-            onPathSelected = () => { };
-        };
-    }, [selectedMachineId, recentMachinePaths]);
+    }, [selectedPathParam, machineIdParam, selectedMachineId, machines, recentMachinePaths]);
 
     const handleMachineClick = React.useCallback(() => {
-        router.push('/new/pick/machine');
-    }, []);
+        if (selectedMachineId) {
+            router.push({
+                pathname: '/new/pick/machine',
+                params: { selectedId: selectedMachineId },
+            });
+        } else {
+            router.push('/new/pick/machine');
+        }
+    }, [router, selectedMachineId]);
 
     //
     // Agent selection

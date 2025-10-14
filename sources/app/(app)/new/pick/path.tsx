@@ -10,7 +10,6 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { layout } from '@/components/layout';
 import { t } from '@/text';
 import { MultiTextInput, MultiTextInputHandle } from '@/components/MultiTextInput';
-import { callbacks } from '../index';
 
 const stylesheet = StyleSheet.create((theme) => ({
     container: {
@@ -122,9 +121,18 @@ export default function PathPickerScreen() {
 
     const handleSelectPath = React.useCallback(() => {
         const pathToUse = customPath.trim() || machine?.metadata?.homeDir || '/home';
-        // Set the selection and go back
-        callbacks.onPathSelected(params.machineId ?? null, pathToUse);
-        router.back();
+        const nextParams: Record<string, string> = {
+            selectedPath: pathToUse,
+        };
+
+        if (params.machineId) {
+            nextParams.machineId = params.machineId;
+        }
+
+        router.replace({
+            pathname: '/new',
+            params: nextParams,
+        });
     }, [customPath, router, machine, params.machineId]);
 
     if (!machine) {
