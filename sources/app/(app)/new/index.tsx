@@ -24,13 +24,13 @@ import { PermissionMode, ModelMode } from '@/components/PermissionModeSelector';
 
 // Simple temporary state for passing selections back from picker screens
 let onMachineSelected: (machineId: string) => void = () => { };
-let onPathSelected: (path: string) => void = () => { };
+let onPathSelected: (machineId: string | null, path: string) => void = () => { };
 export const callbacks = {
     onMachineSelected: (machineId: string) => {
         onMachineSelected(machineId);
     },
-    onPathSelected: (path: string) => {
-        onPathSelected(path);
+    onPathSelected: (machineId: string | null, path: string) => {
+        onPathSelected(machineId, path);
     }
 }
 
@@ -195,14 +195,27 @@ function NewSessionScreen() {
     }, [recentMachinePaths]);
 
     React.useEffect(() => {
-        let handler = (path: string) => {
+        let handler = (machineId: string | null, path: string) => {
+            if (machineId && machineId !== selectedMachineId) {
+                setSelectedMachineId(machineId);
+            }
             setSelectedPath(path);
+
+            if (machineId) {
+                const currentIndex = recentMachinePaths.findIndex(entry => entry.machineId === machineId);
+                const alreadyFirstWithSamePath = currentIndex === 0 && recentMachinePaths[0]?.path === path;
+
+                if (!alreadyFirstWithSamePath) {
+                    const updatedPaths = updateRecentMachinePaths(recentMachinePaths, machineId, path);
+                    sync.applySettings({ recentMachinePaths: updatedPaths });
+                }
+            }
         };
         onPathSelected = handler;
         return () => {
             onPathSelected = () => { };
         };
-    }, []);
+    }, [selectedMachineId, recentMachinePaths]);
 
     const handleMachineClick = React.useCallback(() => {
         router.push('/new/pick/machine');
