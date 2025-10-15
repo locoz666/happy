@@ -129,7 +129,7 @@ export default function PathPickerScreen() {
             nextParams.machineId = params.machineId;
         }
 
-        router.replace({
+        router.navigate({
             pathname: '/new',
             params: nextParams,
         });

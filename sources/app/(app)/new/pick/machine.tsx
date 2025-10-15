@@ -73,7 +73,7 @@ export default function MachinePickerScreen() {
     const machines = useAllMachines();
 
     const handleSelectMachine = (machineId: string) => {
-        router.replace({
+        router.navigate({
             pathname: '/new',
             params: { machineId },
         });
