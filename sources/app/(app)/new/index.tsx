@@ -318,20 +318,14 @@ function NewSessionScreen() {
                 return lastUsedModelMode as ModelMode;
             }
         }
-        return agentType === 'codex' ? 'gpt-5-codex-high' : 'default';
+        return 'default';
     });
 
     // Reset permission and model modes when agent type changes
     React.useEffect(() => {
-        if (agentType === 'codex') {
-            // Switch to codex-compatible modes
-            setPermissionMode('default');
-            setModelMode('gpt-5-codex-high');
-        } else {
-            // Switch to claude-compatible modes
-            setPermissionMode('default');
-            setModelMode('default');
-        }
+        // 切换 Agent 时同步重置权限与模型设置，保持默认使用 CLI 配置
+        setPermissionMode('default');
+        setModelMode('default');
     }, [agentType]);
 
     const handlePermissionModeChange = React.useCallback((mode: PermissionMode) => {

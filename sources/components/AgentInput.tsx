@@ -290,9 +290,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     const screenWidth = useWindowDimensions().width;
 
     const hasText = props.value.trim().length > 0;
-    
-    // Check if this is a Codex session
-    const isCodex = props.metadata?.flavor === 'codex';
+    // 通过 agentType 或 metadata 判断是否为 Codex 会话
+    const isCodex = props.agentType === 'codex' || props.metadata?.flavor === 'codex';
 
     // Calculate context warning
     const contextWarning = props.usageData?.contextSize
@@ -475,9 +474,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
             if (e.key === 'm' && (e.metaKey || e.ctrlKey) && props.onModelModeChange) {
                 e.preventDefault();
                 const modelOrder: ModelMode[] = isCodex
-                    ? ['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'default']
+                    ? ['default', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low']
                     : ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-                const currentIndex = modelOrder.indexOf(props.modelMode || (isCodex ? 'gpt-5-codex-high' : 'default'));
+                const currentIndex = modelOrder.indexOf(props.modelMode || 'default');
                 const nextIndex = (currentIndex + 1) % modelOrder.length;
                 props.onModelModeChange(modelOrder[nextIndex]);
                 hapticsLight();
@@ -637,7 +636,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         };
                                         const config = modelConfig[model as keyof typeof modelConfig];
                                         if (!config) return null;
-                                        const isSelected = props.modelMode === model || (isCodex && model === 'gpt-5-codex-high' && !props.modelMode) || (!isCodex && model === 'default' && !props.modelMode);
+                                        const hasModelMode = Boolean(props.modelMode);
+                                        const isSelected = hasModelMode ? props.modelMode === model : model === 'default';
 
                                         return (
                                             <Pressable
