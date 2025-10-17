@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { sessionAllow, sessionDeny } from '@/sync/ops';
+import { sessionAllow, sessionDeny, sessionAbort } from '@/sync/ops';
 import { useUnistyles } from 'react-native-unistyles';
 import { storage } from '@/sync/storage';
 import { t } from '@/text';
@@ -127,6 +127,11 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
         } catch (error) {
             console.error('Failed to abort permission:', error);
         } finally {
+            try {
+                await sessionAbort(sessionId);
+            } catch (abortError) {
+                console.error('Failed to stop Codex session:', abortError);
+            }
             setLoadingButton(null);
         }
     };
