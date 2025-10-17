@@ -31,6 +31,35 @@ import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnistyles } from 'react-native-unistyles';
 
+const VOICE_SESSION_READY_TIMEOUT_MS = 5000;
+
+async function ensureRealtimeVoiceSessionReady() {
+    const { enableRealtimeVoice } = storage.getState();
+    enableRealtimeVoice();
+
+    if (storage.getState().isRealtimeVoiceReady) {
+        return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        let unsubscribe: () => void = () => { };
+        const timeout = setTimeout(() => {
+            unsubscribe();
+            reject(new Error('语音会话初始化超时'));
+        }, VOICE_SESSION_READY_TIMEOUT_MS);
+
+        unsubscribe = storage.subscribe((state, previousState) => {
+            const wasReady = previousState ? previousState.isRealtimeVoiceReady : false;
+            if (wasReady || !state.isRealtimeVoiceReady) {
+                return;
+            }
+            clearTimeout(timeout);
+            unsubscribe();
+            resolve();
+        });
+    });
+}
+
 export const SessionView = React.memo((props: { id: string }) => {
     const sessionId = props.id;
     const router = useRouter();
@@ -215,6 +244,7 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         }
         if (realtimeStatus === 'disconnected' || realtimeStatus === 'error') {
             try {
+                await ensureRealtimeVoiceSessionReady();
                 const initialPrompt = voiceHooks.onVoiceStarted(sessionId);
                 await startRealtimeSession(sessionId, initialPrompt);
                 tracking?.capture('voice_session_started', { sessionId });

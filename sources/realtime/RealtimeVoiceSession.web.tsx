@@ -135,8 +135,11 @@ export const RealtimeVoiceSession: React.FC = () => {
             }
         }
 
+        storage.getState().markRealtimeVoiceReady();
+
         return () => {
             // Clean up on unmount
+            storage.getState().resetRealtimeVoiceReady();
             conversationInstance = null;
         };
     }, [conversation]);

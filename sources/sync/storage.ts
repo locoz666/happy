@@ -99,6 +99,8 @@ interface StorageState {
     feedLoaded: boolean;  // True after initial feed fetch
     friendsLoaded: boolean;  // True after initial friends fetch
     realtimeStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+    isRealtimeVoiceEnabled: boolean;
+    isRealtimeVoiceReady: boolean;
     socketStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
     socketLastConnectedAt: number | null;
     socketLastDisconnectedAt: number | null;
@@ -123,6 +125,9 @@ interface StorageState {
     applyNativeUpdateStatus: (status: { available: boolean; updateUrl?: string } | null) => void;
     isMutableToolCall: (sessionId: string, callId: string) => boolean;
     setRealtimeStatus: (status: 'disconnected' | 'connecting' | 'connected' | 'error') => void;
+    enableRealtimeVoice: () => void;
+    markRealtimeVoiceReady: () => void;
+    resetRealtimeVoiceReady: () => void;
     setSocketStatus: (status: 'disconnected' | 'connecting' | 'connected' | 'error') => void;
     getActiveSessions: () => Session[];
     updateSessionDraft: (sessionId: string, draft: string | null) => void;
@@ -284,6 +289,8 @@ export const storage = create<StorageState>()((set, get) => {
         sessionMessages: {},
         sessionGitStatus: {},
         realtimeStatus: 'disconnected',
+        isRealtimeVoiceEnabled: false,
+        isRealtimeVoiceReady: false,
         socketStatus: 'disconnected',
         socketLastConnectedAt: null,
         socketLastDisconnectedAt: null,
@@ -752,6 +759,33 @@ export const storage = create<StorageState>()((set, get) => {
             ...state,
             realtimeStatus: status
         })),
+        enableRealtimeVoice: () => set((state) => {
+            if (state.isRealtimeVoiceEnabled) {
+                return state;
+            }
+            return {
+                ...state,
+                isRealtimeVoiceEnabled: true
+            };
+        }),
+        markRealtimeVoiceReady: () => set((state) => {
+            if (state.isRealtimeVoiceReady) {
+                return state;
+            }
+            return {
+                ...state,
+                isRealtimeVoiceReady: true
+            };
+        }),
+        resetRealtimeVoiceReady: () => set((state) => {
+            if (!state.isRealtimeVoiceReady) {
+                return state;
+            }
+            return {
+                ...state,
+                isRealtimeVoiceReady: false
+            };
+        }),
         setSocketStatus: (status: 'disconnected' | 'connecting' | 'connected' | 'error') => set((state) => {
             const now = Date.now();
             const updates: Partial<StorageState> = {
@@ -1263,6 +1297,14 @@ export function useEntitlement(id: KnownEntitlements): boolean {
 
 export function useRealtimeStatus(): 'disconnected' | 'connecting' | 'connected' | 'error' {
     return storage(useShallow((state) => state.realtimeStatus));
+}
+
+export function useRealtimeVoiceEnabled(): boolean {
+    return storage(useShallow((state) => state.isRealtimeVoiceEnabled));
+}
+
+export function useRealtimeVoiceReady(): boolean {
+    return storage(useShallow((state) => state.isRealtimeVoiceReady));
 }
 
 export function useSocketStatus() {
