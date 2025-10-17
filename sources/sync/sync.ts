@@ -4,6 +4,7 @@ import { AuthCredentials } from '@/auth/tokenStorage';
 import { Encryption } from '@/sync/encryption/encryption';
 import { decodeBase64, encodeBase64 } from '@/encryption/base64';
 import { storage } from './storage';
+import type { ApplyMessagesOptions } from './storage';
 import { ApiEphemeralUpdateSchema, ApiMessage, ApiUpdateContainerSchema } from './apiTypes';
 import type { ApiEphemeralActivityUpdate } from './apiTypes';
 import { Session, Machine } from './storageTypes';
@@ -1395,7 +1396,7 @@ class Sync {
         }
     }
 
-    private fetchMessages = async (sessionId: string) => {
+    private fetchMessages = async (sessionId: string, requestOptions?: { beforeSeq?: number }) => {
         log.log(`💬 fetchMessages starting for session ${sessionId} - acquiring lock`);
 
         // Get encryption
@@ -1406,7 +1407,12 @@ class Sync {
         }
 
         // Request
-        const response = await apiSocket.request(`/v1/sessions/${sessionId}/messages`);
+        const query = new URLSearchParams();
+        if (requestOptions?.beforeSeq) {
+            query.set('beforeSeq', requestOptions.beforeSeq.toString());
+        }
+        const path = query.size > 0 ? `/v1/sessions/${sessionId}/messages?${query.toString()}` : `/v1/sessions/${sessionId}/messages`;
+        const response = await apiSocket.request(path);
         const data = await response.json();
 
         // Collect existing messages
@@ -1448,8 +1454,40 @@ class Sync {
         // console.log('messages', JSON.stringify(normalizedMessages));
 
         // Apply to storage
-        this.applyMessages(sessionId, normalizedMessages);
+        const hasMore = Object.prototype.hasOwnProperty.call(data, 'hasMore') ? data.hasMore : undefined;
+        const nextCursor = Object.prototype.hasOwnProperty.call(data, 'nextCursor') ? data.nextCursor : undefined;
+        const applyOptions: ApplyMessagesOptions = {
+            pagination: {
+                hasMore,
+                cursor: nextCursor
+            },
+            loadingMode: requestOptions?.beforeSeq ? 'older' : 'initial'
+        };
+        this.applyMessages(sessionId, normalizedMessages, applyOptions);
         log.log(`💬 fetchMessages completed for session ${sessionId} - processed ${normalizedMessages.length} messages`);
+    }
+
+    loadOlderMessages = async (sessionId: string) => {
+        const sessionState = storage.getState().sessionMessages[sessionId];
+        if (!sessionState || !sessionState.isLoaded) {
+            return;
+        }
+        if (!sessionState.hasMore || sessionState.isLoadingOlder) {
+            return;
+        }
+        const cursor = sessionState.oldestCursor;
+        if (!cursor) {
+            return;
+        }
+
+        storage.getState().setSessionMessagesLoadingOlder(sessionId, true);
+        try {
+            await this.fetchMessages(sessionId, { beforeSeq: cursor.seq });
+        } catch (error) {
+            console.error('Failed to load older messages:', error);
+        } finally {
+            storage.getState().setSessionMessagesLoadingOlder(sessionId, false);
+        }
     }
 
     private registerPushToken = async () => {
@@ -1959,8 +1997,8 @@ class Sync {
     // Apply store
     //
 
-    private applyMessages = (sessionId: string, messages: NormalizedMessage[]) => {
-        const result = storage.getState().applyMessages(sessionId, messages);
+    private applyMessages = (sessionId: string, messages: NormalizedMessage[], options?: ApplyMessagesOptions) => {
+        const result = storage.getState().applyMessages(sessionId, messages, options);
         let m: Message[] = [];
         for (let messageId of result.changed) {
             const message = storage.getState().sessionMessages[sessionId].messagesMap[messageId];

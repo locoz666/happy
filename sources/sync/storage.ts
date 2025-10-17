@@ -42,11 +42,27 @@ function isSessionActive(session: { active: boolean; activeAt: number }): boolea
 // Known entitlement IDs
 export type KnownEntitlements = 'pro';
 
+type MessagePaginationCursor = {
+    seq: number;
+    createdAt: number;
+};
+
+export type ApplyMessagesOptions = {
+    pagination?: {
+        hasMore?: boolean;
+        cursor?: MessagePaginationCursor | null;
+    };
+    loadingMode?: 'initial' | 'older' | 'realtime';
+};
+
 interface SessionMessages {
     messages: Message[];
     messagesMap: Record<string, Message>;
     reducerState: ReducerState;
     isLoaded: boolean;
+    hasMore: boolean;
+    oldestCursor: MessagePaginationCursor | null;
+    isLoadingOlder: boolean;
 }
 
 // Machine type is now imported from storageTypes - represents persisted machine data
@@ -94,8 +110,9 @@ interface StorageState {
     applyMachines: (machines: Machine[], replace?: boolean) => void;
     applyLoaded: () => void;
     applyReady: () => void;
-    applyMessages: (sessionId: string, messages: NormalizedMessage[]) => { changed: string[], hasReadyEvent: boolean };
+    applyMessages: (sessionId: string, messages: NormalizedMessage[], options?: ApplyMessagesOptions) => { changed: string[], hasReadyEvent: boolean };
     applyMessagesLoaded: (sessionId: string) => void;
+    setSessionMessagesLoadingOlder: (sessionId: string, isLoadingOlder: boolean) => void;
     applySettings: (settings: Settings, version: number) => void;
     applySettingsLocal: (settings: Partial<Settings>) => void;
     applyLocalSettings: (settings: Partial<LocalSettings>) => void;
@@ -417,6 +434,7 @@ export const storage = create<StorageState>()((set, get) => {
                         .sort((a, b) => b.createdAt - a.createdAt);
 
                     updatedSessionMessages[session.id] = {
+                        ...existingSessionMessages,
                         messages: messagesArray,
                         messagesMap: mergedMessagesMap,
                         reducerState: existingSessionMessages.reducerState, // The reducer modifies state in-place, so this has the updates
@@ -466,7 +484,7 @@ export const storage = create<StorageState>()((set, get) => {
             ...state,
             isDataReady: true
         })),
-        applyMessages: (sessionId: string, messages: NormalizedMessage[]) => {
+        applyMessages: (sessionId: string, messages: NormalizedMessage[], options?: ApplyMessagesOptions) => {
             let changed = new Set<string>();
             let hasReadyEvent = false;
             set((state) => {
@@ -476,7 +494,10 @@ export const storage = create<StorageState>()((set, get) => {
                     messages: [],
                     messagesMap: {},
                     reducerState: createReducer(),
-                    isLoaded: false
+                    isLoaded: false,
+                    hasMore: true,
+                    oldestCursor: null,
+                    isLoadingOlder: false
                 };
 
                 // Get the session's agentState if available
@@ -526,6 +547,23 @@ export const storage = create<StorageState>()((set, get) => {
                     };
                 }
 
+                let hasMore = existingSession.hasMore;
+                let oldestCursor = existingSession.oldestCursor;
+                if (options?.pagination) {
+                    if (options.pagination.hasMore !== undefined) {
+                        hasMore = options.pagination.hasMore;
+                    } else if (options.pagination.cursor === null) {
+                        hasMore = false;
+                    }
+                    if (options.pagination.cursor !== undefined) {
+                        oldestCursor = options.pagination.cursor;
+                    }
+                }
+
+                const isLoadingOlder = options?.loadingMode === 'older'
+                    ? false
+                    : existingSession.isLoadingOlder;
+
                 return {
                     ...state,
                     sessions: updatedSessions,
@@ -536,7 +574,10 @@ export const storage = create<StorageState>()((set, get) => {
                             messages: messagesArray,
                             messagesMap: mergedMessagesMap,
                             reducerState: existingSession.reducerState, // Explicitly include the mutated reducer state
-                            isLoaded: true
+                            isLoaded: true,
+                            hasMore,
+                            oldestCursor,
+                            isLoadingOlder
                         }
                     }
                 };
@@ -594,7 +635,10 @@ export const storage = create<StorageState>()((set, get) => {
                             reducerState,
                             messages,
                             messagesMap,
-                            isLoaded: true
+                            isLoaded: true,
+                            hasMore: true,
+                            oldestCursor: null,
+                            isLoadingOlder: false
                         } satisfies SessionMessages
                     }
                 };
@@ -612,6 +656,28 @@ export const storage = create<StorageState>()((set, get) => {
             }
 
             return result;
+        }),
+        setSessionMessagesLoadingOlder: (sessionId: string, isLoadingOlder: boolean) => set((state) => {
+            const existingSession = state.sessionMessages[sessionId] || {
+                messages: [],
+                messagesMap: {},
+                reducerState: createReducer(),
+                isLoaded: false,
+                hasMore: true,
+                oldestCursor: null,
+                isLoadingOlder: false
+            };
+
+            return {
+                ...state,
+                sessionMessages: {
+                    ...state.sessionMessages,
+                    [sessionId]: {
+                        ...existingSession,
+                        isLoadingOlder
+                    }
+                }
+            };
         }),
         applySettingsLocal: (settings: Partial<Settings>) => set((state) => {
             saveSettings(applySettings(state.settings, settings), state.settingsVersion ?? 0);
@@ -1046,12 +1112,14 @@ export function useSession(id: string): Session | null {
 
 const emptyArray: unknown[] = [];
 
-export function useSessionMessages(sessionId: string): { messages: Message[], isLoaded: boolean } {
+export function useSessionMessages(sessionId: string): { messages: Message[], isLoaded: boolean, hasMore: boolean, isLoadingOlder: boolean } {
     return storage(useShallow((state) => {
         const session = state.sessionMessages[sessionId];
         return {
             messages: session?.messages ?? emptyArray,
-            isLoaded: session?.isLoaded ?? false
+            isLoaded: session?.isLoaded ?? false,
+            hasMore: session?.hasMore ?? false,
+            isLoadingOlder: session?.isLoadingOlder ?? false
         };
     }));
 }
